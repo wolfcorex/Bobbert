@@ -1,5 +1,17 @@
+"""
+List of improvments by wolfcorex:
+reborn the search function with newer api
+added improvments for leave command, it wouldnt leave for me so i edited it
+Thank you for making this open source, may we work together as a community using discord.py
+
+few improvments i would like & might do in the future:
+buttons for skip, pause, resume, autoplay(plays random songs), stop, & leave
+improvments to the bot on other & multiple servers (not sure if its just me)
+update embed with time remaining (if i do it, i'll problaby refresh every 10 secs to save resources)
+add slash commands
+
+"""
 import discord
-# from discord_components import Select, SelectOption, Button
 from discord.ext import commands
 import asyncio
 from asyncio import run_coroutine_threadsafe
@@ -9,23 +21,30 @@ import json
 import os
 import datetime
 from yt_dlp import YoutubeDL
+from discord import ui
+
 
 # TODO Make queue command list time left in audio
 # TODO Add playlist mechanics
+
 # Made a search command
+ # updated search command to use newer api
+
 # Made bot leave vc after 3 minutes of inactivity
 # Made the bot auto leave the VC when no-one is in it
 # Made search command faster (download after selection)
 # Made a cancel button for the search option
+ # updated to use newer api
+
 # Loaded onto raspi
 # Made refresh command that restarts the bot
 # Allowed for bot to play in multiple servers at once
-# Made skip and previous commands replay first and last songs (respectively) when at the ends of queue
+ # error, not sure whats happening maybe my end???
 
+# Made skip and previous commands replay first and last songs (respectively) when at the ends of queue
 
 async def setup(bot):
     await bot.add_cog(music_cog(bot))
-
 
 class music_cog(commands.Cog):
     def __init__(self, bot):
@@ -63,6 +82,8 @@ class music_cog(commands.Cog):
     @commands.Cog.listener()
     async def on_ready(self):
         for guild in self.bot.guilds:
+# added this for feedback, terminal looking lonely.  You will also know when exactly it loaded
+            print(f"Loaded: {__name__}")
             id = int(guild.id)
             self.musicQueue[id] = []
             self.queueIndex[id] = 0
@@ -331,19 +352,16 @@ class music_cog(commands.Cog):
                     message = self.generate_embed(ctx, song, 2)
                     await ctx.send(embed=message)
 
-    # Search Command
-    # !DEPRICATED FOR NOW DUE TO DISCORD COMPONENTS INCOMPATABILITY
 
-    # @ commands.command(
-    #     name="search",
-    #     aliases=["find", "sr"],
-    #     help="""
-    #         [url || search terms]
-    #         Provides a list of YouTube search results
-    #         Provides a list of the first ten YouTube search results for a url or specified search terms. You can then select one of the results to add to the current queue.
-    #         """
-    # )
-    """
+    @commands.command(
+        name="search",
+        aliases=["find", "sr"],
+        help="""
+            [url || search terms]
+            Provides a list of YouTube search results
+            Provides a list of the first ten YouTube search results for a url or specified search terms. You can then select one of the results to add to the current queue.
+            """
+    )
     async def search(self, ctx, *args):
         search = " ".join(args)
         songNames = []
@@ -353,9 +371,10 @@ class music_cog(commands.Cog):
         if not args:
             await ctx.send("You must specify search terms to use this command.")
             return
+
         try:
             userChannel = ctx.author.voice.channel
-        except:
+        except AttributeError:
             await ctx.send("You must be connected to a voice channel.")
             return
 
@@ -369,85 +388,83 @@ class music_cog(commands.Cog):
             songNames.append(name)
             embedText += f"{i + 1} - [{name}]({url})\n"
 
-        for i, title in enumerate(songNames):
-            selectionOptions.append(SelectOption(
-                label=f"{i + 1} - {title[:95]}", value=i))
-        searchResults = discord.Embed(
+        if not songTokens:
+            await ctx.send("No results found.")
+            return
+
+    # Create select menu options
+        select_options = [
+            discord.SelectOption(
+                label=f"{i + 1} - {title[:95]}",
+                value=str(i)
+            )
+            for i, title in enumerate(songNames)
+        ]
+
+    # Create select menu
+        select = discord.ui.Select(
+            placeholder="Select a song",
+            options=select_options
+        )
+
+        async def select_callback(interaction: discord.Interaction):
+            chosen_index = int(interaction.data['values'][0])
+            song_ref = self.extract_YT(songTokens[chosen_index])
+            if isinstance(song_ref, bool):  # If False
+                await interaction.response.send_message("Could not download the song. Incorrect format, try a different keyword.")
+                return
+
+        # Add the selected song to the queue
+            self.musicQueue[ctx.guild.id].append([song_ref, userChannel])
+
+            embed_response = discord.Embed(
+                title=f"Option #{chosen_index + 1} Selected",
+                description=f"[{song_ref['title']}]({song_ref['link']}) added to the queue!",
+                colour=self.embedRed
+            )
+            embed_response.set_thumbnail(url=song_ref['thumbnail'])
+
+            await interaction.response.send_message(embed=embed_response)
+
+        # If the bot is not currently playing music, start playing
+            if not self.is_playing[ctx.guild.id]:
+                await self.play_music(ctx)
+
+        select.callback = select_callback
+
+        async def cancel_callback(interaction: discord.Interaction):
+            await interaction.response.send_message("Search canceled.", ephemeral=True)
+            await interaction.message.delete()
+
+        cancel_button = discord.ui.Button(
+            label="Cancel",
+            style=discord.ButtonStyle.red,
+            custom_id="cancel_search"
+        )
+        cancel_button.callback = cancel_callback
+
+
+    # Create view with select menu
+        view = discord.ui.View()
+        view.add_item(select)
+        view.add_item(cancel_button)
+
+    # Send the embed with the select menu
+        search_results_embed = discord.Embed(
             title="Search Results",
             description=embedText,
             colour=self.embedRed
         )
-        selectionComponents = [
-            Select(
-                placeholder="Select an option",
-                options=selectionOptions
-            ),
-            Button(
-                label="Cancel",
-                custom_id="Cancel",
-                style=4
-            )
-        ]
-        message = await ctx.send(embed=searchResults, components=selectionComponents)
+        message = await ctx.send(embed=search_results_embed, view=view)
+
+    # Wait for interaction
         try:
-            tasks = [
-                asyncio.create_task(self.bot.wait_for(
-                    "button_click",
-                    timeout=60.0,
-                    check=None
-                ), name="button"),
-                asyncio.create_task(self.bot.wait_for(
-                    "select_option",
-                    timeout=60.0,
-                    check=None
-                ), name="select")
-            ]
-            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-
-            finished: asyncio.Task = list(done)[0]
-
-            for task in pending:
-                try:
-                    task.cancel()
-                except asyncio.CancelledError:
-                    pass
-
-            if finished == None:
-                searchResults.title = "Search Failed"
-                searchResults.description = ""
-                await message.delete()
-                await ctx.send(embed=searchResults)
-                return
-
-            action = finished.get_name()
-
-            if action == "button":
-                searchResults.title = "Search Cancelled"
-                searchResults.description = ""
-                await message.delete()
-                await ctx.send(embed=searchResults)
-            elif action == "select":
-                result = finished.result()
-                chosenIndex = int(result.values[0])
-                songRef = self.extract_YT(songTokens[chosenIndex])
-                if type(songRef) == type(True):
-                    await ctx.send("Could not download the song. Incorrect format, try a different keyword.")
-                    return
-                embedResponse = discord.Embed(
-                    title=f"Option #{int(result.values[0]) + 1} Selected",
-                    description=f"[{songRef['title']}]({songRef['link']}) added to the queue!",
-                    colour=self.embedRed
-                )
-                embedResponse.set_thumbnail(url=songRef['thumbnail'])
-                await message.delete()
-                await ctx.send(embed=embedResponse)
-                self.musicQueue[ctx.guild.id].append([songRef, userChannel])
-        except:
-            searchResults.title = "Search Failed"
-            searchResults.description = ""
+            await self.bot.wait_for("interaction", timeout=60.0, check=lambda i: i.message.id == message.id and isinstance(i, discord.Interaction))
+        except asyncio.TimeoutError:
             await message.delete()
-            await ctx.send(embed=searchResults)
-    """
+            await ctx.send("Search interaction timed out.")
+
+
     # Add Command
 
     @ commands.command(
@@ -730,12 +747,30 @@ class music_cog(commands.Cog):
             Removes the bot from the voice channel and clears all of the songs from the queue.
             """,
     )
-    async def leave(self, ctx):
-        id = int(ctx.guild.id)
-        self.is_playing[id] = False
-        self.is_paused[id] = False
-        self.musicQueue[id] = []
-        self.queueIndex[id] = 0
-        if self.vc[id] != None:
-            await ctx.send(f"{self.names[id]} has left the building! The queue has been cleared as well.")
-            await self.vc[id].disconnect()
+
+# improved leave function to actually leave
+
+    async def leave(self, ctx: commands.Context) -> None:
+        """Makes the bot leave the voice channel and clears the music queue."""
+        guild_id = ctx.guild.id
+
+    # Reset internal state
+        self.is_playing[guild_id] = False
+        self.is_paused[guild_id] = False
+        self.musicQueue[guild_id] = []
+        self.queueIndex[guild_id] = 0
+
+        vc = self.vc.get(guild_id)
+
+        if vc is not None:
+        # Send confirmation message
+            await ctx.send(f"{self.names.get(guild_id, 'The bot')} has left the building! The queue has been cleared as well.")
+
+        # Disconnect from the voice channel
+            try:
+                await vc.disconnect()
+            except Exception as e:
+            # Handle potential disconnection errors
+                await ctx.send(f"An error occurred while trying to disconnect: {e}")
+        else:
+            await ctx.send("I'm not connected to any voice channel.")
