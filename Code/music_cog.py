@@ -6,7 +6,7 @@ Thank you for making this open source, may we work together as a community using
 
 few improvments i would like & might do in the future:
 buttons for skip, pause, resume, autoplay(plays random songs), stop, & leave
-improvments to the bot on other & multiple servers (not sure if its just me)
+improvments to the bot on other & multiple servers (not sure if its just me) [update, check line 90]
 update embed with time remaining (if i do it, i'll problaby refresh every 10 secs to save resources)
 add slash commands
 
@@ -28,19 +28,17 @@ from discord import ui
 # TODO Add playlist mechanics
 
 # Made a search command
- # updated search command to use newer api
+    # updated search command to use newer api
 
 # Made bot leave vc after 3 minutes of inactivity
 # Made the bot auto leave the VC when no-one is in it
 # Made search command faster (download after selection)
 # Made a cancel button for the search option
- # updated to use newer api
+    # updated to use newer api
 
 # Loaded onto raspi
 # Made refresh command that restarts the bot
 # Allowed for bot to play in multiple servers at once
- # error, not sure whats happening maybe my end???
-
 # Made skip and previous commands replay first and last songs (respectively) when at the ends of queue
 
 async def setup(bot):
@@ -81,16 +79,16 @@ class music_cog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
+        print(f"Loaded: {__name__}")
         for guild in self.bot.guilds:
-# added this for feedback, terminal looking lonely.  You will also know when exactly it loaded
-            print(f"Loaded: {__name__}")
             id = int(guild.id)
             self.musicQueue[id] = []
             self.queueIndex[id] = 0
             self.vc[id] = None
             self.is_paused[id] = self.is_playing[id] = False
 
-            botMember = await guild.fetch_member(975410595576840272)
+# replace 975410595576840272 with application id, might wanna do a .env file for token and id.
+        botMember = await guild.fetch_member(975410595576840272)
             nickname = botMember.nick
             if nickname == None:
                 nickname = botMember.name
