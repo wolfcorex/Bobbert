@@ -88,7 +88,7 @@ class music_cog(commands.Cog):
             self.is_paused[id] = self.is_playing[id] = False
 
 # replace 975410595576840272 with application id, might wanna do a .env file for token and id.
-        botMember = await guild.fetch_member(975410595576840272)
+            botMember = await guild.fetch_member(975410595576840272)
             nickname = botMember.nick
             if nickname == None:
                 nickname = botMember.name
